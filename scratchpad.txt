@@ -1,0 +1,50 @@
+Macros need to match: 
+
+Macros also misnamed~ goober
+
+id: windows_powershell_wmi_win32_scheduledjob_filter_logic_filter
+catalog_type: macro
+content: >
+    ```empty macro for tuning```
+
+historical_baseline:
+
+id: T1059.001_historical_baseline_search
+title: T1059.001_historical_baseline_search
+catalog_type: "search"
+description: Baseline historical impact search for T1059.001 ESCU Detections
+authorization_scope: "detection"
+content: >
+    `notable_index` source IN ("nh-aw_escu_windows_msexchange_management_mailbox_cmdlet_usage", "nh-aw_escu_powershell_load_module_in_meterpreter", "nh-aw_escu_getwmiobject_user_account_with_powershell_script_block", "nh-aw_escu_powershell_com_hijacking_inprocserver32_modification", "nh-aw_escu_powershell_processing_stream_of_data", "nh-aw_escu_powershell_domain_enumeration", "nh-aw_escu_windows_powershell_import_applocker_policy", "nh-aw_escu_possible_lateral_movement_powershell_spawn", "nh-aw_escu_powershell_creating_thread_mutex", "nh-aw_escu_malicious_powershell_process___execution_policy_bypass", "nh-aw_escu_any_powershell_downloadfile", "nh-aw_escu_powershell_execute_com_object", "nh-aw_escu_powershell_fileless_script_contains_base64_encoded_content", "nh-aw_escu_detect_mimikatz_with_powershell_script_block_logging", "nh-aw_escu_windows_powershell_scheduletask", "nh-aw_escu_powershell_enable_powershell_remoting", "nh-aw_escu_powershell_loading_dotnet_into_memory_via_reflection", "nh-aw_escu_windows_powershell_wmi_win32_scheduledjob", "nh-aw_escu_powershell_4104_hunting", "nh-aw_escu_powershell_fileless_process_injection_via_getprocaddress", "nh-aw_escu_exchange_powershell_module_usage", "nh-aw_escu_unloading_amsi_via_reflection", "nh-aw_escu_recon_using_wmi_class", "nh-aw_escu_powershell___connect_to_internet_with_hidden_window", "nh-aw_escu_malicious_powershell_process_with_obfuscation_techniques", "nh-aw_escu_powershell_webrequest_using_memory_stream", "nh-aw_escu_detect_empire_with_powershell_script_block_logging", "nh-aw_escu_get_foresttrust_with_powershell_script_block", "nh-aw_escu_windows_powershell_cryptography_namespace", "nh-aw_escu_powershell_start_or_stop_service", "nh-aw_escu_any_powershell_downloadstring", "nh-aw_escu_powershell_using_memory_as_backing_store", "nh-aw_escu_powershell_script_block_with_url_chain", "nh-aw_escu_nishang_powershelltcponeline", "nh-aw_escu_windows_powershell_remotesigned_file", "nh-aw_escu_detect_certify_with_powershell_script_block_logging", "nh-aw_escu_set_default_powershell_execution_policy_to_unrestricted_or_bypass", "nh-aw_escu_windows_powershell_get_ciminstance_remote_computer", "nh-aw_escu_getlocaluser_with_powershell_script_block") 
+    | table urgency_would_be, count
+
+
+Each ESCU ID needs its own file. New file structure: 
+
+id: nh-aw_escu_windows_msexchange_management_mailbox_cmdlet_usage
+title: nh-aw_domain_account_enumeration
+catalog_type: "correlation_search"
+mitre_attack_id:
+ - T1059
+ - T1059.001
+authorization_scope: "detection"
+throttle_timeframe: "14400s"
+description: >
+tuning_macros:
+- <macro_thats_created>
+suppress_fields: 
+ - <whatever the first OBSERVABLE is, in this case 'dest'>
+required_fields: {
+    - _time
+    - Message
+    - dest
+}
+content: >
+    sourcetype=MSExchange:management EventCode=1 Message IN ("*New-MailboxExportRequest*", "*New-ManagementRoleAssignment*", "*New-MailboxSearch*", "*Get-Recipient*", "*Search-Mailbox*")
+    | stats count min(_time) as firstTime max(_time) as lastTime by host Message
+    | `security_content_ctime(firstTime)`
+    | `security_content_ctime(lastTime)`
+    | rename host AS dest
+    | `windows_msexchange_management_mailbox_cmdlet_usage_filter` #Macro not found in Macros
+    | `nh-aw_macro_placeholder`
+    | `nh-aw_shadow_package`
