@@ -116,6 +116,9 @@ def create_logic_filter_file(macro_name, logic_filter_dir):
     sanitized_macro_name = re.sub(r'[\\/*?:"<>|]', "_", macro_name)
     logic_filter_file = os.path.join(logic_filter_dir, f"{sanitized_macro_name}.yml")
     
+    # Ensure the directory exists
+    os.makedirs(logic_filter_dir, exist_ok=True)
+    
     # Prepare the logic filter content
     logic_filter_content = {
         'id': f"{sanitized_macro_name}",
@@ -131,6 +134,7 @@ def create_logic_filter_file(macro_name, logic_filter_dir):
         f.write(f"    ```{logic_filter_content['content']}```\n")
     
     print(f"Created logic filter YML file: {logic_filter_file}")
+
 
 def create_historical_baseline_file(escu_id, title, description, content, output_dir):
     file_path = os.path.join(output_dir, f"{escu_id}_historical_baseline.yml")
@@ -196,10 +200,6 @@ def create_correlation_search_file(escu_id, title, description, mitre_attack_ids
         f.write(f"  content: >\n    {correlation_search_content['content']}\n")
     
     print(f"Created correlation search YML file: {file_path}")
-
-
-
-
 def replace_macros_in_search(search_query, macro_dir, logic_filter_dir):
     def replace_macro(match):
         macro_name = match.group(1)
@@ -209,7 +209,7 @@ def replace_macros_in_search(search_query, macro_dir, logic_filter_dir):
             if re.match(pattern, macro_name):
                 return f'`{macro_name}`'
 
-        # Continue with replacement logic if not excluded
+        # Check if the macro already exists
         macro_file = os.path.join(macro_dir, f"{macro_name}.yml")
         if os.path.exists(macro_file):
             with open(macro_file, 'r') as f:
@@ -217,12 +217,63 @@ def replace_macros_in_search(search_query, macro_dir, logic_filter_dir):
                 definition = macro_content.get('definition', '')
                 return definition
         else:
+            # Create the missing macro in the ESCU_Macros directory
             create_logic_filter_file(macro_name, logic_filter_dir)
             return f"`{macro_name}` ```Macro not found in Macros```"
 
     # Replace all macros in the search_query using the regex pattern
-    return re.sub(r'`([^`]+)`', replace_macro, search_query)
+    modified_search = re.sub(r'`([^`]+)`', replace_macro, search_query)
 
+    # Ensure single '|' at the beginning of each line and correctly justify the final stanza
+    modified_search_lines = modified_search.strip().split('\n')
+    justified_search_lines = [line.lstrip('|').strip() for line in modified_search_lines]
+    justified_search = ' | '.join(justified_search_lines)
+
+    return justified_search
+
+def create_correlation_search_file(escu_id, title, description, mitre_attack_ids, tuning_macros, suppress_fields, required_fields, content, output_dir):
+    file_path = os.path.join(output_dir, f"{escu_id}.yml")
+    
+    # Append the `nh-aw_shadow_package` macro at the end of the search content with correct indentation
+    content += "\n  | `nh-aw_shadow_package`"
+    
+    correlation_search_content = {
+        'id': escu_id,
+        'title': title,
+        'catalog_type': "correlation_search",
+        'description': description,
+        'mitre_attack_id': mitre_attack_ids,
+        'authorization_scope': "detection",
+        'throttle_timeframe': "14400s",
+        'tuning_macros': tuning_macros,
+        'suppress_fields': suppress_fields,
+        'required_fields': required_fields,
+        'content': content
+    }
+
+    # Write the correlation search content to the YAML file in the desired order
+    with open(file_path, 'w') as f:
+        f.write(f"- id: {correlation_search_content['id']}\n")
+        f.write(f"  title: {correlation_search_content['title']}\n")
+        f.write(f"  catalog_type: {correlation_search_content['catalog_type']}\n")
+        f.write(f"  description: >\n    {correlation_search_content['description']}\n")
+        f.write(f"  mitre_attack_id:\n")
+        for mitre_id in correlation_search_content['mitre_attack_id']:
+            f.write(f"    - {mitre_id}\n")
+        f.write(f"  authorization_scope: {correlation_search_content['authorization_scope']}\n")
+        f.write(f"  throttle_timeframe: {correlation_search_content['throttle_timeframe']}\n")
+        f.write(f"  tuning_macros:\n")
+        for macro in correlation_search_content['tuning_macros']:
+            f.write(f"    - {macro}\n")
+        f.write(f"  suppress_fields:\n")
+        for field in correlation_search_content['suppress_fields']:
+            f.write(f"    - {field}\n")
+        f.write(f"  required_fields:\n")
+        for field in correlation_search_content['required_fields']:
+            f.write(f"    - {field}\n")
+        f.write(f"  content: >\n    {correlation_search_content['content']}\n")
+
+    print(f"Created correlation search YML file: {file_path}")
 
 def organize_detections_by_id(detections, fields, macro_dir, logic_filter_dir, output_dir):
     escu_detections_dir = r"C:\Users\lukew\OneDrive\Documents\dev_link\splunk_dev\escu-baseline\ESCU_Detections"
@@ -231,8 +282,12 @@ def organize_detections_by_id(detections, fields, macro_dir, logic_filter_dir, o
         name_snake_case = snake_case(detection['name'])
         detection_id = f"nh-aw_escu_{name_snake_case}"
         
-        # Determine which type of YAML file to create based on the fields in the detection
+        # Print detection name and tags for debugging
+        print(f"Processing detection: {detection['name']}")
+        print(f"Tags: {detection.get('tags', {})}")
+
         if 'historical_baseline' in detection['name'].lower():
+            print(f"Creating Historical Baseline for {detection['name']}")
             create_historical_baseline_file(
                 escu_id=detection_id,
                 title=detection['name'],
@@ -242,6 +297,8 @@ def organize_detections_by_id(detections, fields, macro_dir, logic_filter_dir, o
             )
         
         elif 'correlation_search' in detection['tags'].get('catalog_type', '').lower():
+            print(f"Creating Correlation Search for {detection['name']}")
+            modified_search = replace_macros_in_search(detection.get('search', ''), macro_dir, logic_filter_dir)
             create_correlation_search_file(
                 escu_id=detection_id,
                 title=detection['name'],
@@ -250,28 +307,25 @@ def organize_detections_by_id(detections, fields, macro_dir, logic_filter_dir, o
                 tuning_macros=[f"{detection_id}_filter"],  # Assuming filter macros are named after the detection ID
                 suppress_fields=[detection.get('observable', [])[0]['name']],  # First observable field as suppress_field
                 required_fields=detection.get('required_fields', []),
-                content=replace_macros_in_search(detection.get('search', ''), macro_dir, logic_filter_dir),
+                content=modified_search,
                 output_dir=escu_detections_dir
             )
-        
-        elif 'macro' in detection['tags'].get('catalog_type', '').lower():
-            # Handle macros specifically
-            create_logic_filter_file(name_snake_case, logic_filter_dir)
 
         else:
             organized_detections = {}
+            modified_search = replace_macros_in_search(detection.get('search', ''), macro_dir, logic_filter_dir)
+            modified_search += "\n  | `nh-aw_shadow_package`"  # Append the `nh-aw_shadow_package` macro
             organized_detections[detection_id] = {
                 'name': detection['name'],
                 'description': detection.get('description', ''),
                 'mitre_attack_id': detection['tags'].get('mitre_attack_id', []),
                 'observable': detection.get('observable', []),
                 'required_fields': detection.get('required_fields', []),
-                'search': detection.get('search', '')
+                'search': modified_search
             }
             
-            # Save detections to the specified output directory
+            print(f"Saving Detection YAML for {detection_id}")
             save_detections_to_yaml(organized_detections, os.path.join(escu_detections_dir, f"{detection_id}.yml"))
-
 
 def main():
     # Adjust this path to the actual path where your security_content directory is located
@@ -306,7 +360,6 @@ def main():
     organize_detections_by_id(detections, default_fields, macro_directory, logic_filter_dir, output_dir)
 
     print("\nAll matched detections processed and saved successfully.")
-
 
 
 if __name__ == "__main__":
